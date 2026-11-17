@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NK Model Explorer: Fitness Landscapes and Local Search</title>
+<style>
+  :root{
+    --surface:#fcfcfb; --panel:#ffffff; --border:#e4e3df; --soft:#f0efec;
+    --text:#0b0b0b; --text2:#52514e; --muted:#8a8984;
+    --accent:#2a78d6; --search:#eb6834; --global:#1baf7a; --stuck:#52514e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--surface);color:var(--text);
+       font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1200px;margin:0 auto;padding:20px}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:15px;margin:0 0 10px}
+  .sub{color:var(--text2);margin:0 0 16px;max-width:860px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+  .controls{display:flex;flex-wrap:wrap;gap:14px 26px;align-items:flex-end}
+  .ctl{display:flex;flex-direction:column;gap:4px}
+  .ctl > label{font-size:12px;color:var(--text2);font-weight:600}
+  .ctl .val{color:var(--text);font-weight:700}
+  .hint{font-size:12px;color:var(--muted)}
+  input[type=range]{width:180px;accent-color:var(--accent)}
+  select,input[type=number]{font:inherit;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text)}
+  input[type=number]{width:96px}
+  button{font:inherit;font-weight:600;padding:7px 12px;border-radius:6px;border:1px solid var(--border);
+         background:#fff;color:var(--text);cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button:hover{filter:brightness(.95)}
+  button:disabled{opacity:.5;cursor:default}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .check{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--text2)}
+  .layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;margin-top:14px}
+  @media (max-width:920px){.layout{grid-template-columns:1fr}}
+  .stack{display:flex;flex-direction:column;gap:14px}
+  #mapBox{position:relative;width:100%}
+  #map{display:block;cursor:crosshair;border-radius:4px;margin:0 auto}
+  #map.is3d{cursor:grab;touch-action:none}
+  #map.is3d:active{cursor:grabbing}
+  .cardhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
+  .seg button{border:0;border-radius:0;padding:6px 12px;background:#fff;color:var(--text2)}
+  .seg button + button{border-left:1px solid var(--border)}
+  .seg button.on{background:var(--accent);color:#fff}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-top:10px;font-size:12px;color:var(--text2)}
+  .legend .item{display:flex;align-items:center;gap:6px}
+  .grad{width:150px;height:10px;border-radius:3px;
+        background:linear-gradient(90deg,#cde2fb,#86b6ef,#3987e5,#1c5cab,#0d366b)}
+  .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .stat{background:var(--soft);border-radius:8px;padding:10px 12px}
+  .stat .lbl{font-size:12px;color:var(--text2)}
+  .stat .num{font-size:22px;font-weight:700;line-height:1.2}
+  .stat .note{font-size:12px;color:var(--muted)}
+  .status{margin-top:10px;font-size:13px;color:var(--text2);min-height:20px}
+  svg text{font-family:inherit}
+  .tip{position:fixed;pointer-events:none;background:#fff;border:1px solid var(--border);border-radius:8px;
+       box-shadow:0 4px 14px rgba(0,0,0,.12);padding:8px 10px;font-size:12px;line-height:1.5;color:var(--text);
+       display:none;z-index:10;max-width:280px}
+  .tip b{font-weight:700}
+  .tip .mono{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:1px}
+  .sweepgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  @media (max-width:720px){.sweepgrid{grid-template-columns:1fr}}
+  .charttitle{font-size:13px;font-weight:600;margin:0 0 2px}
+  .chartsub{font-size:12px;color:var(--text2);margin:0 0 6px}
+  details{margin-top:14px}
+  summary{cursor:pointer;font-weight:600}
+  .teach{color:var(--text2);max-width:900px}
+  .teach li{margin-bottom:6px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  table.data{border-collapse:collapse;font-size:12px;margin-top:8px}
+  table.data th, table.data td{border-bottom:1px solid var(--border);padding:4px 10px;text-align:right}
+  table.data th:first-child, table.data td:first-child{text-align:left}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NK Model Explorer</h1>
+  <p class="sub">
+    An organization makes <b>N</b> yes/no decisions. Each decision's payoff depends on its own setting and on
+    <b>K</b> other decisions. When K&nbsp;=&nbsp;0 the decisions don't interact, so the landscape is smooth with a single peak.
+    As K rises, the decisions become tangled together. The landscape turns rugged, local peaks multiply, and
+    step-by-step improvement gets stuck. Use the controls to see this happen.
+  </p>
+
+  <!-- Landscape controls -->
+  <div class="card">
+    <h2>1. Build the landscape</h2>
+    <div class="controls">
+      <div class="ctl">
+        <label for="nSlider">N (number of decisions): <span class="val" id="nVal"></span></label>
+        <input type="range" id="nSlider" min="4" max="14" step="1" value="10">
+        <span class="hint" id="nHint"></span>
+      </div>
+      <div class="ctl">
+        <label for="kSlider">K (interdependence): <span class="val" id="kVal"></span></label>
+        <input type="range" id="kSlider" min="0" max="9" step="1" value="2">
+        <span class="hint" id="kHint"></span>
+      </div>
+      <div class="ctl">
+        <label for="pattern">Which decisions interact?</label>
+        <select id="pattern">
+          <option value="adjacent">Neighbors (next K in a circle)</option>
+          <option value="random">Random K others</option>
+        </select>
+        <span class="hint">Shown in the interaction matrix</span>
+      </div>
+      <div class="ctl">
+        <label for="seed">Landscape seed</label>
+        <div class="btnrow">
+          <input type="number" id="seed" value="42" min="1" step="1">
+          <button id="newLand">New random landscape</button>
+        </div>
+        <span class="hint">Everyone using the same seed sees the same landscape</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Left: map -->
+    <div class="card">
+      <div class="cardhead">
+        <h2 style="margin:0">2. The fitness landscape</h2>
+        <div class="seg" role="group" aria-label="Choose view">
+          <button id="view3d" class="on" aria-pressed="true">3D landscape</button><button id="view2d" aria-pressed="false">2D map</button>
+        </div>
+      </div>
+      <p class="chartsub" id="mapHelp" style="margin:8px 0 10px"></p>
+      <div class="controls" id="ctl3d" style="margin-bottom:10px;gap:10px 22px">
+        <div class="ctl">
+          <label for="style3d">Shape</label>
+          <select id="style3d">
+            <option value="surface">Smooth surface</option>
+            <option value="bars">Bars (one per configuration)</option>
+          </select>
+        </div>
+        <div class="ctl">
+          <label for="heightSlider">Height: <span class="val" id="heightVal"></span></label>
+          <input type="range" id="heightSlider" min="30" max="250" step="5" value="100" style="width:130px">
+        </div>
+        <div class="ctl">
+          <label for="zoomSlider">Zoom: <span class="val" id="zoomVal"></span></label>
+          <input type="range" id="zoomSlider" min="60" max="300" step="5" value="100" style="width:130px">
+        </div>
+        <div class="ctl">
+          <label class="check"><input type="checkbox" id="autoRot"> Auto-rotate</label>
+          <button id="resetView">Reset view</button>
+        </div>
+      </div>
+      <div id="mapBox"><canvas id="map" aria-label="NK fitness landscape"></canvas></div>
+      <div class="legend">
+        <span class="item">Lower <span class="grad"></span> Higher fitness</span>
+        <span class="item"><svg width="12" height="12"><circle cx="6" cy="6" r="3.5" fill="#fff" stroke="#0b0b0b" stroke-width="1"/></svg>Local peak</span>
+        <span class="item"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="#fff" stroke-width="4"/><circle cx="8" cy="8" r="6" fill="none" stroke="#1baf7a" stroke-width="2.5"/></svg>Global peak</span>
+      </div>
+      <div class="legend">
+        <span class="item"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="#eb6834" stroke="#fff" stroke-width="1.5"/></svg>Searcher still climbing</span>
+        <span class="item"><svg width="14" height="14"><rect x="2" y="2" width="10" height="10" fill="#52514e" stroke="#fff" stroke-width="1.5"/></svg>Stuck on a local peak</span>
+        <span class="item"><svg width="16" height="16"><path d="M8 1.5 L14.5 8 L8 14.5 L1.5 8 Z" fill="#1baf7a" stroke="#fff" stroke-width="1.5"/></svg>Reached the global peak</span>
+      </div>
+      <details>
+        <summary>How to read this map</summary>
+        <p class="teach">
+          <b>The three axes.</b> The decisions are split into two groups, one for each floor axis. One axis runs
+          through every combination of the first group of decisions, and the other runs through the second group.
+          The vertical axis is fitness. So every bar (or point on the surface) is one complete configuration,
+          and its height shows how well that configuration performs.
+        </p>
+        <p class="teach">
+          <b>Who's next to whom.</b> Each floor axis is ordered using a Gray code, so any two configurations that sit
+          side by side differ by exactly one decision. But each configuration has N one-step neighbors, and at most
+          four of them can sit beside it on the floor. The rest are elsewhere. That's why hovering highlights
+          neighbors that are spread around, and why a searcher's single step can jump across the landscape.
+          The smooth surface is a curve drawn through every configuration's real fitness. The slopes between
+          configurations are there so you can see the shape; only the configurations themselves are real choices.
+          Switch to bars for the literal picture, with each configuration as a separate column.
+        </p>
+      </details>
+      <div style="margin-top:18px">
+        <p class="charttitle">Average searcher fitness over time</p>
+        <p class="chartsub">As a % of the best configuration on this landscape. Restarts when you scatter new searchers or change the landscape.</p>
+        <svg id="histChart" width="100%"></svg>
+      </div>
+    </div>
+
+    <!-- Right: search + stats -->
+    <div class="stack">
+      <div class="card">
+        <h2>3. Send out searchers</h2>
+        <div class="controls">
+          <div class="ctl">
+            <label for="agentSlider">Number of searchers: <span class="val" id="agentVal"></span></label>
+            <input type="range" id="agentSlider" min="1" max="100" step="1" value="30">
+          </div>
+          <div class="ctl">
+            <label for="rule">Search rule</label>
+            <select id="rule">
+              <option value="steepest">Steepest ascent (check every 1-step change, take the best)</option>
+              <option value="random">Trial and error (try one random 1-step change)</option>
+            </select>
+          </div>
+          <div class="ctl">
+            <label for="jumpSlider">Long-jump chance per step: <span class="val" id="jumpVal"></span></label>
+            <input type="range" id="jumpSlider" min="0" max="50" step="1" value="0">
+            <span class="hint">Tries a completely new configuration and keeps it only if it's better</span>
+          </div>
+          <div class="ctl">
+            <label for="speedSlider">Speed: <span class="val" id="speedVal"></span></label>
+            <input type="range" id="speedSlider" min="1" max="30" step="1" value="6">
+          </div>
+        </div>
+        <div class="btnrow" style="margin-top:12px">
+          <button class="primary" id="play">▶ Play</button>
+          <button id="stepBtn">Step once</button>
+          <button id="scatter">Scatter new searchers</button>
+          <button id="clearAgents">Clear searchers</button>
+        </div>
+        <div class="check" style="margin-top:10px">
+          <label class="check"><input type="checkbox" id="showPeaks" checked> Show local peaks</label>
+          <label class="check"><input type="checkbox" id="showPaths"> Show search paths</label>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>What's happening</h2>
+        <div class="stats">
+          <div class="stat"><div class="lbl">Possible configurations</div><div class="num" id="stConfigs"></div><div class="note">2<sup>N</sup></div></div>
+          <div class="stat"><div class="lbl">Local peaks</div><div class="num" id="stPeaks"></div><div class="note" id="stPeaksNote"></div></div>
+          <div class="stat"><div class="lbl">Neighbor correlation</div><div class="num" id="stCorr"></div><div class="note" id="stCorrNote"></div></div>
+          <div class="stat"><div class="lbl">Average searcher fitness</div><div class="num" id="stAvg"></div><div class="note">as % of the global peak</div></div>
+          <div class="stat" style="grid-column:1/-1"><div class="lbl">Searchers</div><div class="num" id="stAgents" style="font-size:16px"></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Interaction matrix</h2>
+        <p class="chartsub">Row = decision whose payoff is affected. Shaded column = a decision that affects it.</p>
+        <div id="matrixBox"></div>
+        <div class="legend">
+          <span class="item"><svg width="12" height="12"><rect width="12" height="12" rx="2" fill="#86b6ef"/></svg>Its own setting</span>
+          <span class="item"><svg width="12" height="12"><rect width="12" height="12" rx="2" fill="#1c5cab"/></svg>Depends on this decision</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- K sweep -->
+  <div class="card" style="margin-top:14px">
+    <h2>4. Experiment: what happens as K rises?</h2>
+    <p class="chartsub">
+      For the current N, this builds many random landscapes at every K from 0 to N&minus;1. It counts the local peaks
+      and lets steepest-ascent searchers climb from random starting points.
+    </p>
+    <div class="btnrow" style="margin-bottom:10px">
+      <button class="primary" id="sweepBtn">Run K sweep</button>
+      <span class="hint" id="sweepStatus" style="align-self:center"></span>
+    </div>
+    <div class="sweepgrid">
+      <div>
+        <p class="charttitle">Average number of local peaks</p>
+        <svg id="sweepPeaks" width="100%"></svg>
+      </div>
+      <div>
+        <p class="charttitle">Where local search ends up (% of global peak)</p>
+        <svg id="sweepFit" width="100%"></svg>
+      </div>
+    </div>
+    <details>
+      <summary>Show the sweep as a table</summary>
+      <div id="sweepTable"></div>
+    </details>
+  </div>
+
+  <!-- Teaching notes -->
+  <div class="card" style="margin-top:14px">
+    <h2>Try this</h2>
+    <ol class="teach">
+      <li><b>Smooth world.</b> Set K = 0 and press Play. There's exactly one peak, and every searcher reaches it. When choices don't interact, you can improve them one at a time.</li>
+      <li><b>Add interdependence.</b> Raise K a step at a time and scatter new searchers each time. Watch the number of local peaks climb and the neighbor correlation fall. More and more searchers end up stuck (gray squares).</li>
+      <li><b>Maximum ruggedness.</b> Set K = N&minus;1. Every decision affects every other one, so the landscape is close to random. Where a searcher ends up depends heavily on where it started.</li>
+      <li><b>Exploration vs. exploitation.</b> Keep K high and turn up the long-jump chance. Do searchers escape their local peaks? How much does the extra exploration cost along the way?</li>
+      <li><b>Run the K sweep.</b> Explain the shape of both curves. Why does the average searcher do worse as K rises, even though the best configuration is still out there?</li>
+    </ol>
+    <p class="teach">
+      <b>Strategy link.</b> N is the number of choices that make up a strategy or organizational design. K is how
+      tightly they fit together. Steepest ascent is incremental improvement, and a long jump is a radical
+      reorganization. High-K strategies are hard to find, but they're also hard for rivals to imitate one piece at
+      a time (see Levinthal, 1997; Rivkin, 2000).
+    </p>
+  </div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+(function(){
+  "use strict";
+  const $ = id => document.getElementById(id);
+
+  // ---------- Colors ----------
+  const RAMP = ['#cde2fb','#b7d3f6','#9ec5f4','#86b6ef','#6da7ec','#5598e7','#3987e5',
+                '#2a78d6','#256abf','#1c5cab','#184f95','#104281','#0d366b'];
+  const RAMP_RGB = RAMP.map(h => [1,3,5].map(i => parseInt(h.slice(i,i+2),16)));
+  function rampAt(t){
+    t = Math.max(0, Math.min(1, t)) * (RAMP_RGB.length - 1);
+    const i = Math.min(Math.floor(t), RAMP_RGB.length - 2), f = t - i;
+    const a = RAMP_RGB[i], b = RAMP_RGB[i+1];
+    return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+  }
+  const C = { search:'#eb6834', stuck:'#52514e', global:'#1baf7a', line:'#2a78d6',
+              grid:'#e4e3df', text2:'#52514e', muted:'#8a8984', text:'#0b0b0b' };
+
+  // ---------- Random numbers (seeded) ----------
+  function mulberry32(a){
+    return function(){
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  // ---------- The NK model ----------
+  function buildLandscape(N, K, pattern, seed, light){
+    const rng = mulberry32(seed >>> 0);
+    const deps = [];
+    for (let i = 0; i < N; i++){
+      const d = [i];
+      if (pattern === 'adjacent'){
+        for (let k = 1; k <= K; k++) d.push((i + k) % N);
+      } else {
+        const others = [];
+        for (let j = 0; j < N; j++) if (j !== i) others.push(j);
+        for (let k = 0; k < K; k++){
+          const r = k + Math.floor(rng() * (others.length - k));
+          const tmp = others[k]; others[k] = others[r]; others[r] = tmp;
+          d.push(others[k]);
+        }
+      }
+      deps.push(d);
+    }
+    // Each decision gets a random payoff table with one entry per combination
+    // of its own setting and the K settings it depends on.
+    const T = 1 << (K + 1), tables = [];
+    for (let i = 0; i < N; i++){
+      const t = new Float64Array(T);
+      for (let j = 0; j < T; j++) t[j] = rng();
+      tables.push(t);
+    }
+    const size = 1 << N, fit = new Float64Array(size);
+    let max = -1, min = 2, global = 0;
+    for (let x = 0; x < size; x++){
+      let s = 0;
+      for (let i = 0; i < N; i++){
+        const d = deps[i]; let idx = 0;
+        for (let j = 0; j < d.length; j++) idx = (idx << 1) | ((x >> d[j]) & 1);
+        s += tables[i][idx];
+      }
+      const v = s / N; fit[x] = v;
+      if (v > max){ max = v; global = x; }
+      if (v < min) min = v;
+    }
+    const peak = new Uint8Array(size), peakList = [];
+    for (let x = 0; x < size; x++){
+      let p = 1;
+      for (let i = 0; i < N; i++) if (fit[x ^ (1 << i)] >= fit[x]){ p = 0; break; }
+      if (p){ peak[x] = 1; peakList.push(x); }
+    }
+    let corr = NaN;
+    if (!light){
+      let mean = 0; for (let x = 0; x < size; x++) mean += fit[x]; mean /= size;
+      let v = 0; for (let x = 0; x < size; x++) v += (fit[x] - mean) ** 2; v /= size;
+      let c = 0, n = 0;
+      for (let x = 0; x < size; x++) for (let i = 0; i < N; i++)
+        if (!((x >> i) & 1)){ c += (fit[x] - mean) * (fit[x | (1 << i)] - mean); n++; }
+      corr = v > 0 ? (c / n) / v : 1;
+    }
+    return { N, K, pattern, deps, fit, size, max, min, global, peak, peakList, peakCount: peakList.length, corr };
+  }
+
+  function climb(L, x){
+    const f = L.fit;
+    for (;;){
+      let b = x;
+      for (let i = 0; i < L.N; i++){ const n = x ^ (1 << i); if (f[n] > f[b]) b = n; }
+      if (b === x) return x;
+      x = b;
+    }
+  }
+
+  // ---------- State ----------
+  const S = { N:10, K:2, pattern:'adjacent', seed:42, L:null,
+              agents:[], history:[], playing:false, nAgents:30, rule:'steepest',
+              jump:0, speed:6, showPeaks:true, showPaths:false, hover:-1, sweep:null,
+              view:'3d', style:'surface', hScale:1, zoom:1, az:-0.75, el:0.6, autoRotate:false };
+  const DEFAULT_VIEW = { az:-0.75, el:0.6, zoom:1 };
+  let mapDirty = false;
+  const requestMap = () => { mapDirty = true; };
+
+  // ---------- Map geometry (Gray-code layout) ----------
+  const gray = n => n ^ (n >> 1);
+  function grayInv(g){ let n = 0; for (; g; g >>= 1) n ^= g; return n; }
+  const G = {};
+  const canvas = $('map'), ctx = canvas.getContext('2d');
+  const off = document.createElement('canvas'), offctx = off.getContext('2d');
+  const cfgAt = (r, c) => (gray(r) << G.cb) | gray(c);
+  const posOf = x => ({ r: grayInv(x >> G.cb), c: grayInv(x & ((1 << G.cb) - 1)) });
+  const bits = x => { let s = ''; for (let i = 0; i < S.N; i++) s += (x >> i) & 1; return s; };
+  const pct = x => S.L.fit[x] / S.L.max * 100;
+
+  function layoutMap(){
+    const L = S.L;
+    G.rb = Math.floor(L.N / 2); G.cb = L.N - G.rb;
+    G.rows = 1 << G.rb; G.cols = 1 << G.cb;
+    const avail = Math.max(240, $('mapBox').clientWidth);
+    G.cell = Math.min(avail / G.cols, 560 / G.rows);
+    if (S.view === '3d'){
+      G.W = avail; G.H = Math.round(Math.min(Math.max(avail * 0.72, 300), 600));
+    } else {
+      G.W = G.cols * G.cell; G.H = G.rows * G.cell;
+    }
+    canvas.classList.toggle('is3d', S.view === '3d');
+    // Lookup tables shared by both views
+    const n = G.rows * G.cols, span0 = (L.max - L.min) || 1;
+    G.cfgOf = new Int32Array(n); G.giOf = new Int32Array(L.size);
+    G.tCell = new Float32Array(n); G.rgb = new Float32Array(n * 3);
+    for (let r = 0; r < G.rows; r++) for (let c = 0; c < G.cols; c++){
+      const gi = r * G.cols + c, x = cfgAt(r, c), t = (L.fit[x] - L.min) / span0, col = rampAt(t);
+      G.cfgOf[gi] = x; G.giOf[x] = gi; G.tCell[gi] = t;
+      G.rgb[gi*3] = col[0]; G.rgb[gi*3+1] = col[1]; G.rgb[gi*3+2] = col[2];
+    }
+    buildFine();
+    V.lastKey = '';
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(G.W * dpr); canvas.height = Math.round(G.H * dpr);
+    canvas.style.width = G.W + 'px'; canvas.style.height = G.H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    off.width = G.cols; off.height = G.rows;
+    const img = offctx.createImageData(G.cols, G.rows), span = (L.max - L.min) || 1;
+    for (let r = 0; r < G.rows; r++) for (let c = 0; c < G.cols; c++){
+      const x = cfgAt(r, c), col = rampAt((L.fit[x] - L.min) / span), p = (r * G.cols + c) * 4;
+      img.data[p] = col[0]; img.data[p+1] = col[1]; img.data[p+2] = col[2]; img.data[p+3] = 255;
+    }
+    offctx.putImageData(img, 0, 0);
+  }
+
+  function center(x, a){
+    const p = posOf(x), j = G.cell >= 14 && a ? 1 : 0;
+    return [(p.c + 0.5 + (a ? a.jx * j : 0)) * G.cell, (p.r + 0.5 + (a ? a.jy * j : 0)) * G.cell];
+  }
+
+  // ---------- 3D view (orthographic projection, painter's algorithm) ----------
+  const V = { lastKey:'', lastAz:null };
+  const LIGHT = (() => { const v = [-0.45, -0.55, 0.72], m = Math.hypot(...v); return v.map(a => a / m); })();
+  const bright = (nx, ny, nz) => 0.36 + 0.64 * Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]);
+  const TOPB = bright(0, 0, 1);
+  const SX = (X, Y) => V.cx + V.k * (X * V.ca - Y * V.sa);
+  const SY = (X, Y, Z) => V.cy - V.k * ((X * V.sa + Y * V.ca) * V.se + Z * V.ce);
+  const depth = (X, Y) => X * V.sa + Y * V.ca;          // larger = farther from the viewer
+  const rgbStr = (gi, f) => `rgb(${Math.min(255, G.rgb[gi*3] * f) | 0},${Math.min(255, G.rgb[gi*3+1] * f) | 0},${Math.min(255, G.rgb[gi*3+2] * f) | 0})`;
+  const cellX = gi => ((gi % G.cols) + 0.5) * V.s - V.hw;
+  const cellY = gi => (((gi / G.cols) | 0) + 0.5) * V.s - V.hd;
+
+  function prepare3D(){
+    const rows = G.rows, cols = G.cols, s = 1 / Math.max(rows, cols);
+    V.s = s; V.hw = cols * s / 2; V.hd = rows * s / 2; V.zMax = 0.36 * S.hScale;
+    V.ca = Math.cos(S.az); V.sa = Math.sin(S.az); V.ce = Math.cos(S.el); V.se = Math.sin(S.el);
+    // Fit the bounding box of the scene into the canvas
+    V.k = 1; V.cx = 0; V.cy = 0;
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const X of [-V.hw, V.hw]) for (const Y of [-V.hd, V.hd]) for (const Z of [0, V.zMax]){
+      const px = SX(X, Y), py = SY(X, Y, Z);
+      x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+    }
+    const mx = 78, mt = 34, mb = 44;
+    const k = Math.min((G.W - 2 * mx) / (x1 - x0), (G.H - mt - mb) / (y1 - y0)) * S.zoom;
+    V.k = k; V.cx = G.W / 2 - k * (x0 + x1) / 2; V.cy = mt + (G.H - mt - mb) / 2 - k * (y0 + y1) / 2;
+    V.cellPx = k * s;
+    // Heights
+    const n = rows * cols;
+    if (!V.Z || V.Z.length !== n) V.Z = new Float32Array(n);
+    for (let gi = 0; gi < n; gi++) V.Z[gi] = (0.04 + 0.96 * G.tCell[gi]) * V.zMax;
+    // Back-to-front drawing order (re-sorted only when the view turns noticeably)
+    const key = S.style + '|' + rows + '|' + cols + '|' + S.N + '|' + S.K + '|' + S.seed;
+    if (V.lastKey !== key || V.lastAz === null || Math.abs(S.az - V.lastAz) > 0.02){ buildOrder(); V.lastKey = key; V.lastAz = S.az; }
+  }
+
+  function buildOrder(){
+    const rows = G.rows, cols = G.cols;
+    if (S.style === 'bars'){
+      const n = rows * cols, keys = new Float32Array(n), idx = new Array(n);
+      for (let gi = 0; gi < n; gi++){ keys[gi] = depth(cellX(gi), cellY(gi)); idx[gi] = gi; }
+      idx.sort((a, b) => keys[b] - keys[a]);
+      V.order = Int32Array.from(idx);
+      V.attach = Int32Array.from({ length: n }, (_, i) => i);
+    } else {
+      // Fine (interpolated) grid: quads between fine vertices
+      const F = G.fine, sub = F.sub, qc = F.C - 1, nq = (F.R - 1) * qc, hs = V.s / sub;
+      const keys = new Float32Array(nq), idx = new Array(nq);
+      for (let q = 0; q < nq; q++){
+        const fr = (q / qc) | 0, fc = q % qc;
+        keys[q] = depth((fc + 1) * hs + 0.5 * V.s - V.hw, (fr + 1) * hs + 0.5 * V.s - V.hd); idx[q] = q;
+      }
+      idx.sort((a, b) => keys[b] - keys[a]);
+      V.order = Int32Array.from(idx);
+      // Each real configuration's markers are drawn right after the last-drawn patch touching it
+      const pos = new Int32Array(nq); V.order.forEach((q, i) => { pos[q] = i; });
+      const n = rows * cols; V.attach = new Int32Array(n);
+      for (let gi = 0; gi < n; gi++){
+        const fr0 = ((gi / cols) | 0) * sub, fc0 = (gi % cols) * sub; let best = -1, bq = 0;
+        for (const [dr, dc] of [[-1,-1],[-1,0],[0,-1],[0,0]]){
+          const qr = fr0 + dr, qcc = fc0 + dc;
+          if (qr < 0 || qcc < 0 || qr >= F.R - 1 || qcc >= qc) continue;
+          const q = qr * qc + qcc; if (pos[q] > best){ best = pos[q]; bq = q; }
+        }
+        V.attach[gi] = bq;
+      }
+    }
+  }
+
+  // Smooth surface: Catmull-Rom spline through every real configuration's fitness.
+  // Extra detail is added between configurations, scaled down for big landscapes to stay fast.
+  function buildFine(){
+    const rows = G.rows, cols = G.cols, nq = (rows - 1) * (cols - 1);
+    const sub = Math.max(1, Math.min(6, Math.floor(Math.sqrt(10000 / nq))));
+    const R = (rows - 1) * sub + 1, Cn = (cols - 1) * sub + 1;
+    const T = (r, c) => G.tCell[Math.max(0, Math.min(rows - 1, r)) * cols + Math.max(0, Math.min(cols - 1, c))];
+    const cr = (p0, p1, p2, p3, u) => 0.5 * (2 * p1 + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (3 * p1 - p0 - 3 * p2 + p3) * u * u * u);
+    const seg = (f, last) => { let i = Math.floor(f / sub), u = (f - i * sub) / sub; if (i >= last){ i = last - 1; u = 1; } return [i, u]; };
+    const tmp = new Float32Array(rows * Cn);
+    for (let r = 0; r < rows; r++) for (let fc = 0; fc < Cn; fc++){
+      const [c, u] = seg(fc, cols - 1);
+      tmp[r * Cn + fc] = cr(T(r, c - 1), T(r, c), T(r, c + 1), T(r, c + 2), u);
+    }
+    const TR = (r, fc) => tmp[Math.max(0, Math.min(rows - 1, r)) * Cn + fc];
+    const t = new Float32Array(R * Cn), rgb = new Float32Array(R * Cn * 3);
+    for (let fr = 0; fr < R; fr++){
+      const [r, v] = seg(fr, rows - 1);
+      for (let fc = 0; fc < Cn; fc++){
+        const i = fr * Cn + fc, tv = Math.max(0, Math.min(1, cr(TR(r - 1, fc), TR(r, fc), TR(r + 1, fc), TR(r + 2, fc), v)));
+        t[i] = tv; const col = rampAt(tv); rgb[i*3] = col[0]; rgb[i*3+1] = col[1]; rgb[i*3+2] = col[2];
+      }
+    }
+    G.fine = { sub, R, C: Cn, t, rgb };
+  }
+
+  function poly(pts){
+    ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i+1]);
+    ctx.closePath();
+  }
+
+  function drawFrame3D(){
+    const L = S.L, hw = V.hw, hd = V.hd, zTop = V.zMax;
+    const C4 = [[-hw,-hd],[hw,-hd],[hw,hd],[-hw,hd]];
+    let far = 0; C4.forEach((p, i) => { if (depth(p[0], p[1]) > depth(C4[far][0], C4[far][1])) far = i; });
+    const A = C4[(far + 1) % 4], B = C4[(far + 3) % 4], F = C4[far], Nn = C4[(far + 2) % 4];
+    // Floor
+    poly(C4.flatMap(p => [SX(p[0], p[1]), SY(p[0], p[1], 0)]));
+    ctx.fillStyle = '#efeee9'; ctx.fill();
+    // Back walls
+    for (const W of [A, B]){
+      poly([SX(W[0],W[1]), SY(W[0],W[1],0), SX(F[0],F[1]), SY(F[0],F[1],0), SX(F[0],F[1]), SY(F[0],F[1],zTop), SX(W[0],W[1]), SY(W[0],W[1],zTop)]);
+      ctx.fillStyle = '#f6f5f2'; ctx.fill(); ctx.strokeStyle = '#e4e3df'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    // Vertical axis: fitness ticks as % of the global peak
+    const minPct = L.min / L.max * 100, step = niceStep(100 - minPct, 4);
+    const labelCorner = SX(A[0], A[1]) < SX(B[0], B[1]) ? A : B;
+    ctx.font = '11px system-ui, -apple-system, Segoe UI, sans-serif';
+    for (let v = Math.ceil(minPct / step) * step; v <= 100 + 1e-9; v += step){
+      const z = (0.04 + 0.96 * (v - minPct) / (100 - minPct)) * V.zMax;
+      ctx.beginPath();
+      ctx.moveTo(SX(A[0],A[1]), SY(A[0],A[1],z)); ctx.lineTo(SX(F[0],F[1]), SY(F[0],F[1],z)); ctx.lineTo(SX(B[0],B[1]), SY(B[0],B[1],z));
+      ctx.strokeStyle = '#dedcd6'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = C.text2; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(Math.round(v) + '%', SX(labelCorner[0], labelCorner[1]) - 8, SY(labelCorner[0], labelCorner[1], z));
+    }
+    // Axis lines
+    ctx.strokeStyle = C.muted; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(SX(labelCorner[0], labelCorner[1]), SY(labelCorner[0], labelCorner[1], 0));
+    ctx.lineTo(SX(labelCorner[0], labelCorner[1]), SY(labelCorner[0], labelCorner[1], zTop));
+    ctx.moveTo(SX(A[0],A[1]), SY(A[0],A[1],0)); ctx.lineTo(SX(Nn[0],Nn[1]), SY(Nn[0],Nn[1],0)); ctx.lineTo(SX(B[0],B[1]), SY(B[0],B[1],0));
+    ctx.stroke();
+    ctx.fillStyle = C.text; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = '600 12px system-ui, -apple-system, Segoe UI, sans-serif';
+    ctx.fillText('Fitness', SX(labelCorner[0], labelCorner[1]), SY(labelCorner[0], labelCorner[1], zTop) - 8);
+    // Floor axis titles on the two front edges
+    const ccx = SX(0, 0), ccy = SY(0, 0, 0);
+    const cb = G.cb;
+    for (const E of [A, B]){
+      const mxp = (SX(E[0],E[1]) + SX(Nn[0],Nn[1])) / 2, myp = (SY(E[0],E[1],0) + SY(Nn[0],Nn[1],0)) / 2;
+      let dx = mxp - ccx, dy = myp - ccy; const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m;
+      const alongX = E[1] === Nn[1];   // edge runs along the column (X) axis
+      const label = alongX ? `Decisions 1–${cb}` : `Decisions ${cb + 1}–${S.N}`;
+      ctx.textBaseline = 'middle'; ctx.textAlign = dx < -0.3 ? 'right' : dx > 0.3 ? 'left' : 'center';
+      ctx.fillStyle = C.text2;
+      ctx.fillText(label, mxp + dx * 16, myp + dy * 16);
+    }
+  }
+
+  function drawMarker3D(gi, m){
+    const X = cellX(gi), Y = cellY(gi), px = SX(X, Y), py = SY(X, Y, V.Z[gi]), cp = V.cellPx;
+    if (m.t === 'peak'){
+      ctx.beginPath(); ctx.arc(px, py, Math.max(1.6, Math.min(3.5, cp * 0.14)), 0, Math.PI * 2);
+      ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = C.text; ctx.lineWidth = 1; ctx.stroke();
+    } else if (m.t === 'global'){
+      const rad = Math.max(7, Math.min(cp * 0.42, 20));
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py - rad - 14);
+      ctx.strokeStyle = C.global; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px, py - rad - 14); ctx.lineTo(px + 12, py - rad - 9); ctx.lineTo(px, py - rad - 4); ctx.closePath();
+      ctx.fillStyle = C.global; ctx.fill();
+      ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 4.5; ctx.stroke(); ctx.strokeStyle = C.global; ctx.lineWidth = 2.5; ctx.stroke();
+    } else if (m.t === 'nbr' || m.t === 'hover'){
+      const rad = Math.max(4.5, Math.min(cp * 0.36, 14));
+      ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = m.t === 'hover' ? C.text : C.search; ctx.lineWidth = 2.2; ctx.stroke();
+    } else if (m.t === 'agent'){
+      const a = m.a, r = Math.max(3.5, Math.min(7, cp * 0.26)), j = cp >= 14 ? cp * 0.45 : 0;
+      drawAgentShape(px + a.jx * j, py - r * 0.7 + a.jy * j * 0.5, r, agentState(a));
+    }
+  }
+
+  function drawAgentShape(cx, cy, r, st){
+    ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.beginPath();
+    if (st === 'global'){
+      const d = r * 1.25;
+      ctx.moveTo(cx, cy - d); ctx.lineTo(cx + d, cy); ctx.lineTo(cx, cy + d); ctx.lineTo(cx - d, cy); ctx.closePath();
+      ctx.fillStyle = C.global;
+    } else if (st === 'stuck'){
+      ctx.rect(cx - r * 0.9, cy - r * 0.9, r * 1.8, r * 1.8); ctx.fillStyle = C.stuck;
+    } else {
+      ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = C.search;
+    }
+    ctx.fill(); ctx.stroke();
+  }
+
+  function render3D(){
+    prepare3D();
+    const L = S.L, cols = G.cols, s = V.s, Z = V.Z;
+    ctx.clearRect(0, 0, G.W, G.H);
+    drawFrame3D();
+    // Group markers by the item they must be drawn after
+    const buckets = new Map();
+    const add = (x, m) => { const item = V.attach[G.giOf[x]]; let b = buckets.get(item); if (!b) buckets.set(item, b = []); m.gi = G.giOf[x]; b.push(m); };
+    if (S.showPeaks) for (const x of L.peakList) if (x !== L.global) add(x, { t:'peak', p:0 });
+    add(L.global, { t:'global', p:1 });
+    if (S.hover >= 0){
+      for (let i = 0; i < L.N; i++) add(S.hover ^ (1 << i), { t:'nbr', p:2 });
+      add(S.hover, { t:'hover', p:2 });
+    }
+    for (const a of S.agents) add(a.x, { t:'agent', a, p:3 });
+    buckets.forEach(b => b.sort((u, v) => u.p - v.p));
+
+    const cp = V.cellPx, edge = cp >= 12;
+    if (S.style === 'bars'){
+      const h = s * 0.5 * (cp >= 6 ? 0.84 : 1);
+      const fx = V.sa < 0 ? 1 : -1, fy = V.ca < 0 ? 1 : -1;
+      const bX = bright(fx * V.ca, fx * V.sa, 0) / TOPB, bY = bright(-fy * V.sa, fy * V.ca, 0) / TOPB;
+      ctx.lineJoin = 'round';
+      for (let i = 0; i < V.order.length; i++){
+        const gi = V.order[i], X = cellX(gi), Y = cellY(gi), z = Z[gi];
+        const xf = X + fx * h, yf = Y + fy * h;
+        poly([SX(xf, Y - h), SY(xf, Y - h, 0), SX(xf, Y + h), SY(xf, Y + h, 0), SX(xf, Y + h), SY(xf, Y + h, z), SX(xf, Y - h), SY(xf, Y - h, z)]);
+        ctx.fillStyle = rgbStr(gi, bX); ctx.fill();
+        if (edge){ ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 0.6; ctx.stroke(); }
+        poly([SX(X - h, yf), SY(X - h, yf, 0), SX(X + h, yf), SY(X + h, yf, 0), SX(X + h, yf), SY(X + h, yf, z), SX(X - h, yf), SY(X - h, yf, z)]);
+        ctx.fillStyle = rgbStr(gi, bY); ctx.fill();
+        if (edge) ctx.stroke();
+        poly([SX(X - h, Y - h), SY(X - h, Y - h, z), SX(X + h, Y - h), SY(X + h, Y - h, z), SX(X + h, Y + h), SY(X + h, Y + h, z), SX(X - h, Y + h), SY(X - h, Y + h, z)]);
+        ctx.fillStyle = rgbStr(gi, 1); ctx.fill();
+        if (edge){ ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 0.8; ctx.stroke(); }
+        const b = buckets.get(gi); if (b) for (const m of b) drawMarker3D(m.gi, m);
+      }
+    } else {
+      // Smooth surface: project every fine vertex once, light it with a smoothed normal,
+      // then fill the small patches back to front.
+      const F = G.fine, sub = F.sub, Cn = F.C, Rn = F.R, hs = s / sub, nv = Rn * Cn;
+      if (!V.fz || V.fz.length !== nv){ V.fz = new Float32Array(nv); V.px = new Float32Array(nv); V.py = new Float32Array(nv); V.fcol = new Float32Array(nv * 3); }
+      const fz = V.fz, PX = V.px, PY = V.py, FC = V.fcol;
+      const ox = 0.5 * s - V.hw, oy = 0.5 * s - V.hd;
+      for (let i = 0; i < nv; i++) fz[i] = (0.04 + 0.96 * F.t[i]) * V.zMax;
+      for (let fr = 0; fr < Rn; fr++) for (let fc = 0; fc < Cn; fc++){
+        const i = fr * Cn + fc, X = ox + fc * hs, Y = oy + fr * hs;
+        PX[i] = SX(X, Y); PY[i] = SY(X, Y, fz[i]);
+        const zl = fz[fr * Cn + Math.max(0, fc - 1)], zr = fz[fr * Cn + Math.min(Cn - 1, fc + 1)];
+        const zu = fz[Math.max(0, fr - 1) * Cn + fc], zd = fz[Math.min(Rn - 1, fr + 1) * Cn + fc];
+        const dx = (fc > 0 && fc < Cn - 1 ? 2 : 1) * hs, dy = (fr > 0 && fr < Rn - 1 ? 2 : 1) * hs;
+        let nx = -(zr - zl) / dx, ny = -(zd - zu) / dy, nz = 1;
+        const nm = Math.hypot(nx, ny, nz); nx /= nm; ny /= nm; nz /= nm;
+        const f = bright(nx * V.ca - ny * V.sa, nx * V.sa + ny * V.ca, nz) / TOPB;
+        FC[i*3] = F.rgb[i*3] * f; FC[i*3+1] = F.rgb[i*3+1] * f; FC[i*3+2] = F.rgb[i*3+2] * f;
+      }
+      const qc = Cn - 1, cs = (a, b, c, d, f) =>
+        `rgb(${Math.min(255, (FC[a*3]+FC[b*3]+FC[c*3]+FC[d*3]) * 0.25 * f) | 0},` +
+        `${Math.min(255, (FC[a*3+1]+FC[b*3+1]+FC[c*3+1]+FC[d*3+1]) * 0.25 * f) | 0},` +
+        `${Math.min(255, (FC[a*3+2]+FC[b*3+2]+FC[c*3+2]+FC[d*3+2]) * 0.25 * f) | 0})`;
+      ctx.lineJoin = 'round'; ctx.lineWidth = 0.6;
+      for (let k = 0; k < V.order.length; k++){
+        const q = V.order[k], fr = (q / qc) | 0, fc = q % qc;
+        const a = fr * Cn + fc, b = a + 1, d = a + Cn, c = d + 1;
+        const col = cs(a, b, c, d, 1);
+        ctx.beginPath(); ctx.moveTo(PX[a], PY[a]); ctx.lineTo(PX[b], PY[b]); ctx.lineTo(PX[c], PY[c]); ctx.lineTo(PX[d], PY[d]); ctx.closePath();
+        ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = col; ctx.stroke();
+        const bk = buckets.get(q); if (bk) for (const m of bk) drawMarker3D(m.gi, m);
+      }
+      // Solid "skirts" down to the floor on the two edges facing the viewer
+      const fx = V.sa < 0 ? 1 : -1, fy = V.ca < 0 ? 1 : -1;
+      const bX = bright(fx * V.ca, fx * V.sa, 0) / TOPB * 0.8, bY = bright(-fy * V.sa, fy * V.ca, 0) / TOPB * 0.8;
+      const skirt = (i, j, X1, Y1, X2, Y2, f) => {
+        const col = `rgb(${Math.min(255, 57 * f) | 0},${Math.min(255, 135 * f) | 0},${Math.min(255, 229 * f) | 0})`;
+        ctx.beginPath(); ctx.moveTo(PX[i], PY[i]); ctx.lineTo(PX[j], PY[j]);
+        ctx.lineTo(SX(X2, Y2), SY(X2, Y2, 0)); ctx.lineTo(SX(X1, Y1), SY(X1, Y1, 0)); ctx.closePath();
+        ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = col; ctx.stroke();
+      };
+      const fcE = fx > 0 ? Cn - 1 : 0, XE = ox + fcE * hs;
+      for (let fr = 0; fr < Rn - 1; fr++) skirt(fr * Cn + fcE, (fr + 1) * Cn + fcE, XE, oy + fr * hs, XE, oy + (fr + 1) * hs, bX);
+      const frE = fy > 0 ? Rn - 1 : 0, YE = oy + frE * hs;
+      for (let fc = 0; fc < Cn - 1; fc++) skirt(frE * Cn + fc, frE * Cn + fc + 1, ox + fc * hs, YE, ox + (fc + 1) * hs, YE, bY);
+    }
+    if (S.showPaths){
+      ctx.strokeStyle = 'rgba(235,104,52,0.75)'; ctx.lineWidth = 1.8;
+      for (const a of S.agents){
+        if (a.path.length < 2) continue;
+        ctx.beginPath();
+        a.path.forEach((x, i) => { const gi = G.giOf[x], X = cellX(gi), Y = cellY(gi), px = SX(X, Y), py = SY(X, Y, Z[gi]);
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+        ctx.stroke();
+      }
+    }
+  }
+
+  function inPoly(px, py, pts){
+    let inside = false;
+    for (let i = 0, j = pts.length - 2; i < pts.length; j = i, i += 2){
+      const xi = pts[i], yi = pts[i+1], xj = pts[j], yj = pts[j+1];
+      if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function pick3D(px, py){
+    if (!V.order) return -1;
+    const s = V.s, Z = V.Z, cols = G.cols;
+    if (S.style === 'bars'){
+      const h = s * 0.5 * (V.cellPx >= 6 ? 0.84 : 1), fx = V.sa < 0 ? 1 : -1, fy = V.ca < 0 ? 1 : -1;
+      for (let i = V.order.length - 1; i >= 0; i--){
+        const gi = V.order[i], X = cellX(gi), Y = cellY(gi), z = Z[gi], xf = X + fx * h, yf = Y + fy * h;
+        if (inPoly(px, py, [SX(X - h, Y - h), SY(X - h, Y - h, z), SX(X + h, Y - h), SY(X + h, Y - h, z), SX(X + h, Y + h), SY(X + h, Y + h, z), SX(X - h, Y + h), SY(X - h, Y + h, z)]) ||
+            inPoly(px, py, [SX(xf, Y - h), SY(xf, Y - h, 0), SX(xf, Y + h), SY(xf, Y + h, 0), SX(xf, Y + h), SY(xf, Y + h, z), SX(xf, Y - h), SY(xf, Y - h, z)]) ||
+            inPoly(px, py, [SX(X - h, yf), SY(X - h, yf, 0), SX(X + h, yf), SY(X + h, yf, 0), SX(X + h, yf), SY(X + h, yf, z), SX(X - h, yf), SY(X - h, yf, z)]))
+          return G.cfgOf[gi];
+      }
+    } else {
+      const F = G.fine, Cn = F.C, qc = Cn - 1, sub = F.sub, PX = V.px, PY = V.py;
+      if (!PX || PX.length !== F.R * Cn) return -1;
+      for (let i = V.order.length - 1; i >= 0; i--){
+        const q = V.order[i], a = ((q / qc) | 0) * Cn + q % qc, ids = [a, a + 1, a + Cn + 1, a + Cn];
+        const pts = ids.flatMap(v => [PX[v], PY[v]]);
+        if (inPoly(px, py, pts)){
+          // Snap to the nearest real configuration
+          let best = 0, bd = 1e9;
+          for (let k = 0; k < 4; k++){ const d = Math.hypot(pts[k*2] - px, pts[k*2+1] - py); if (d < bd){ bd = d; best = k; } }
+          const v = ids[best], r = Math.round(((v / Cn) | 0) / sub), c = Math.round((v % Cn) / sub);
+          return G.cfgOf[r * cols + c];
+        }
+      }
+    }
+    return -1;
+  }
+
+  function renderMap(){
+    mapDirty = false;
+    if (S.view === '3d') return render3D();
+    const L = S.L, cell = G.cell;
+    ctx.clearRect(0, 0, G.W, G.H);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, G.W, G.H);
+    if (cell >= 10){
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (let c = 1; c < G.cols; c++){ ctx.moveTo(c * cell, 0); ctx.lineTo(c * cell, G.H); }
+      for (let r = 1; r < G.rows; r++){ ctx.moveTo(0, r * cell); ctx.lineTo(G.W, r * cell); }
+      ctx.stroke();
+    }
+    // Hover: outline the hovered square and its N one-step neighbors
+    if (S.hover >= 0){
+      const hs = S.hover;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < L.N; i++){
+        const p = posOf(hs ^ (1 << i));
+        ctx.strokeStyle = '#ffffff'; ctx.strokeRect(p.c * cell + 1, p.r * cell + 1, cell - 2, cell - 2);
+        ctx.strokeStyle = C.search; ctx.strokeRect(p.c * cell + 2.5, p.r * cell + 2.5, Math.max(1, cell - 5), Math.max(1, cell - 5));
+      }
+      const p = posOf(hs);
+      ctx.strokeStyle = C.text; ctx.lineWidth = 2.5;
+      ctx.strokeRect(p.c * cell + 1, p.r * cell + 1, cell - 2, cell - 2);
+    }
+    if (S.showPeaks){
+      const rad = Math.max(1.6, Math.min(4, cell * 0.14));
+      ctx.lineWidth = 1;
+      for (const x of L.peakList){
+        if (x === L.global) continue;
+        const [cx, cy] = center(x);
+        ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = C.text; ctx.stroke();
+      }
+    }
+    // Global peak ring (always shown)
+    {
+      const [cx, cy] = center(L.global), rad = Math.max(7, Math.min(cell * 0.42, 22));
+      ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.stroke();
+      ctx.strokeStyle = C.global; ctx.lineWidth = 2.5; ctx.stroke();
+    }
+    if (S.showPaths){
+      ctx.strokeStyle = 'rgba(235,104,52,0.55)'; ctx.lineWidth = 1.5;
+      for (const a of S.agents){
+        if (a.path.length < 2) continue;
+        ctx.beginPath();
+        a.path.forEach((x, i) => { const [cx, cy] = center(x, a); i ? ctx.lineTo(cx, cy) : ctx.moveTo(cx, cy); });
+        ctx.stroke();
+      }
+    }
+    const r = Math.max(3.5, Math.min(7, cell * 0.26));
+    for (const a of S.agents){
+      const [cx, cy] = center(a.x, a), st = agentState(a);
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      if (st === 'global'){
+        const d = r * 1.25;
+        ctx.moveTo(cx, cy - d); ctx.lineTo(cx + d, cy); ctx.lineTo(cx, cy + d); ctx.lineTo(cx - d, cy); ctx.closePath();
+        ctx.fillStyle = C.global;
+      } else if (st === 'stuck'){
+        ctx.rect(cx - r * 0.9, cy - r * 0.9, r * 1.8, r * 1.8);
+        ctx.fillStyle = C.stuck;
+      } else {
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = C.search;
+      }
+      ctx.fill(); ctx.stroke();
+    }
+  }
+
+  // ---------- Searchers ----------
+  function agentState(a){
+    if (a.x === S.L.global) return 'global';
+    return S.L.peak[a.x] ? 'stuck' : 'search';
+  }
+  function makeAgent(x){ return { x, path:[x], jx:(Math.random() - 0.5) * 0.55, jy:(Math.random() - 0.5) * 0.55 }; }
+  function scatter(){
+    S.agents = [];
+    for (let i = 0; i < S.nAgents; i++) S.agents.push(makeAgent(Math.floor(Math.random() * S.L.size)));
+    resetHistory();
+  }
+  function resetHistory(){ S.history = []; recordHistory(); }
+  function recordHistory(){
+    if (!S.agents.length) return;
+    const avg = S.agents.reduce((s, a) => s + pct(a.x), 0) / S.agents.length;
+    S.history.push({ x: S.history.length, y: avg });
+  }
+  function move(a, x){ a.x = x; a.path.push(x); if (a.path.length > 400) a.path.shift(); }
+
+  function stepAgent(a){
+    const L = S.L, f = L.fit, N = L.N;
+    if (S.jump > 0 && Math.random() < S.jump){
+      const c = Math.floor(Math.random() * L.size);
+      if (f[c] > f[a.x]) move(a, c);
+      return;
+    }
+    if (S.rule === 'steepest'){
+      let best = a.x;
+      for (let i = 0; i < N; i++){ const n = a.x ^ (1 << i); if (f[n] > f[best]) best = n; }
+      if (best !== a.x) move(a, best);
+    } else {
+      const n = a.x ^ (1 << Math.floor(Math.random() * N));
+      if (f[n] > f[a.x]) move(a, n);
+    }
+  }
+  function allSettled(){ return S.jump === 0 && S.agents.every(a => S.L.peak[a.x]); }
+  function simStep(){
+    if (!S.agents.length) return;
+    S.agents.forEach(stepAgent);
+    recordHistory();
+    if (S.playing && allSettled()){ setPlaying(false); setStatus(true); }
+  }
+
+  // ---------- Stats panel ----------
+  const fmt = n => n.toLocaleString('en-US');
+  function updateStats(){
+    const L = S.L;
+    $('stConfigs').textContent = fmt(L.size);
+    $('stPeaks').textContent = fmt(L.peakCount);
+    $('stPeaksNote').textContent = L.peakCount === 1 ? 'just one: the global peak' : 'including the global peak';
+    $('stCorr').textContent = L.corr.toFixed(2);
+    $('stCorrNote').textContent = 'theory: 1 − (K+1)/N = ' + (1 - (L.K + 1) / L.N).toFixed(2);
+    if (S.agents.length){
+      const counts = { global:0, stuck:0, search:0 };
+      S.agents.forEach(a => counts[agentState(a)]++);
+      const avg = S.agents.reduce((s, a) => s + pct(a.x), 0) / S.agents.length;
+      $('stAvg').textContent = avg.toFixed(1) + '%';
+      $('stAgents').innerHTML =
+        `<span style="color:${C.global}">◆</span> ${counts.global} at global peak &nbsp; ` +
+        `<span style="color:${C.stuck}">■</span> ${counts.stuck} stuck on a local peak &nbsp; ` +
+        `<span style="color:${C.search}">●</span> ${counts.search} still climbing`;
+    } else {
+      $('stAvg').textContent = '–';
+      $('stAgents').textContent = 'None yet. Scatter some, or click the map.';
+    }
+  }
+  function setStatus(finished){
+    const el = $('status');
+    if (finished){
+      const g = S.agents.filter(a => a.x === S.L.global).length;
+      el.textContent = `Every searcher has stopped on a peak. ${g} of ${S.agents.length} found the global peak. ` +
+                       (S.L.peakCount > 1 ? 'Try a long-jump chance above 0% to help them escape.' : '');
+    } else el.textContent = '';
+  }
+
+  // ---------- Interaction matrix ----------
+  function renderMatrix(){
+    const L = S.L, N = L.N, box = $('matrixBox');
+    const size = Math.min(300, Math.max(180, box.clientWidth - 30)), lab = 22, cell = (size - lab) / N;
+    let s = `<svg width="${size}" height="${size}" role="img" aria-label="Interaction matrix">`;
+    for (let i = 0; i < N; i++){
+      const fs = Math.min(11, cell * 0.7);
+      s += `<text x="${lab + (i + 0.5) * cell}" y="${lab - 6}" font-size="${fs}" text-anchor="middle" fill="${C.text2}">${i + 1}</text>`;
+      s += `<text x="${lab - 6}" y="${lab + (i + 0.5) * cell + fs * 0.35}" font-size="${fs}" text-anchor="end" fill="${C.text2}">${i + 1}</text>`;
+      for (let j = 0; j < N; j++){
+        const self = i === j, dep = !self && L.deps[i].includes(j);
+        const fill = self ? '#86b6ef' : dep ? '#1c5cab' : '#f0efec';
+        s += `<rect x="${lab + j * cell + 1}" y="${lab + i * cell + 1}" width="${cell - 2}" height="${cell - 2}" rx="2" fill="${fill}">` +
+             `<title>Decision ${i + 1}${self ? ' (its own setting)' : dep ? ' depends on decision ' + (j + 1) : ' does not depend on decision ' + (j + 1)}</title></rect>`;
+      }
+    }
+    box.innerHTML = s + '</svg>';
+  }
+
+  // ---------- Tooltip ----------
+  const tip = $('tip');
+  function showTip(e, html){
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > window.innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  const hideTip = () => { tip.style.display = 'none'; };
+
+  // ---------- Line chart (SVG) ----------
+  function niceStep(range, n){
+    const raw = range / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+    return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
+  }
+  function lineChart(svg, pts, o){
+    const W = Math.max(260, svg.clientWidth || svg.parentNode.clientWidth || 400), H = o.h || 190;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H);
+    const m = { l:46, r:14, t:12, b:34 };
+    if (!pts.length){
+      svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="13" fill="${C.muted}">${o.empty || 'No data yet'}</text>`;
+      svg.onmousemove = svg.onmouseleave = null; return;
+    }
+    const x0 = o.xMin ?? 0, x1 = Math.max(o.xMax ?? Math.max(...pts.map(p => p.x)), x0 + 1);
+    let y0 = o.yMin, y1 = o.yMax;
+    if (y0 === undefined){ const mn = Math.min(...pts.map(p => p.y)); y0 = Math.max(0, Math.floor(mn / 10) * 10 - (mn % 10 < 2 ? 10 : 0)); }
+    if (y1 === undefined){ const mx = Math.max(...pts.map(p => p.y)); const st = niceStep(Math.max(mx - y0, 1), 4); y1 = Math.ceil(mx / st) * st || 1; }
+    const X = v => m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r);
+    const Y = v => H - m.b - (v - y0) / (y1 - y0) * (H - m.t - m.b);
+    let s = '';
+    const ys = niceStep(y1 - y0, 4);
+    for (let v = Math.ceil(y0 / ys) * ys; v <= y1 + 1e-9; v += ys){
+      s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${C.grid}" stroke-width="1"/>`;
+      s += `<text x="${m.l - 8}" y="${Y(v) + 4}" font-size="11" text-anchor="end" fill="${C.text2}">${o.yFmt ? o.yFmt(v) : v}</text>`;
+    }
+    const xs = Math.max(1, Math.round(niceStep(x1 - x0, 6)));
+    for (let v = Math.ceil(x0 / xs) * xs; v <= x1 + 1e-9; v += xs)
+      s += `<text x="${X(v)}" y="${H - m.b + 16}" font-size="11" text-anchor="middle" fill="${C.text2}">${v}</text>`;
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}" stroke="${C.muted}" stroke-width="1"/>`;
+    s += `<text x="${(m.l + W - m.r) / 2}" y="${H - 4}" font-size="11" text-anchor="middle" fill="${C.text2}">${o.xLabel}</text>`;
+    if (o.highlightX !== undefined){
+      const hp = pts.find(p => p.x === o.highlightX);
+      if (hp) s += `<line x1="${X(hp.x)}" x2="${X(hp.x)}" y1="${m.t}" y2="${H - m.b}" stroke="${C.search}" stroke-width="1" stroke-dasharray="3 3"/>` +
+                   `<text x="${X(hp.x) + 5}" y="${m.t + 10}" font-size="11" fill="${C.text2}">current K</text>`;
+    }
+    const d = pts.map((p, i) => (i ? 'L' : 'M') + X(p.x).toFixed(1) + ' ' + Y(p.y).toFixed(1)).join(' ');
+    s += `<path d="${d}" fill="none" stroke="${C.line}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (pts.length <= 40) for (const p of pts){
+      const isH = p.x === o.highlightX;
+      s += `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="${isH ? 5.5 : 4}" fill="${isH ? C.search : C.line}" stroke="#fff" stroke-width="2"/>`;
+    }
+    s += `<g class="hover" visibility="hidden"><line class="hl" y1="${m.t}" y2="${H - m.b}" stroke="${C.text2}" stroke-width="1"/>` +
+         `<circle class="hc" r="5" fill="${C.line}" stroke="#fff" stroke-width="2"/></g>` +
+         `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+    svg.innerHTML = s;
+    const g = svg.querySelector('.hover'), hl = svg.querySelector('.hl'), hc = svg.querySelector('.hc');
+    svg.onmousemove = e => {
+      const rect = svg.getBoundingClientRect(), mx = (e.clientX - rect.left) * (W / rect.width);
+      let best = pts[0];
+      for (const p of pts) if (Math.abs(X(p.x) - mx) < Math.abs(X(best.x) - mx)) best = p;
+      hl.setAttribute('x1', X(best.x)); hl.setAttribute('x2', X(best.x));
+      hc.setAttribute('cx', X(best.x)); hc.setAttribute('cy', Y(best.y));
+      g.setAttribute('visibility', 'visible');
+      showTip(e, o.tip(best));
+    };
+    svg.onmouseleave = () => { g.setAttribute('visibility', 'hidden'); hideTip(); };
+  }
+
+  function renderHistory(){
+    lineChart($('histChart'), S.history, {
+      h: 190, xLabel: 'Step', yMax: 100, xMax: Math.max(10, S.history.length - 1),
+      yFmt: v => v + '%', empty: 'Scatter searchers and press Play',
+      tip: p => `<b>Step ${p.x}</b><br>Average fitness: ${p.y.toFixed(1)}% of global peak`
+    });
+  }
+
+  // ---------- K sweep ----------
+  let sweepRunning = false;
+  async function runSweep(){
+    if (sweepRunning) return;
+    sweepRunning = true; $('sweepBtn').disabled = true;
+    const N = S.N, pattern = S.pattern;
+    const reps = N <= 8 ? 40 : N <= 10 ? 25 : N <= 12 ? 12 : 6, starts = 40, out = [];
+    for (let K = 0; K < N; K++){
+      $('sweepStatus').textContent = `Working… K = ${K} of ${N - 1}`;
+      await new Promise(r => setTimeout(r, 0));
+      let pk = 0, ff = 0, hit = 0;
+      for (let r = 0; r < reps; r++){
+        const L = buildLandscape(N, K, pattern, (S.seed + 7919 * (K + 1) + 104729 * (r + 1)) >>> 0, true);
+        pk += L.peakCount;
+        for (let s = 0; s < starts; s++){
+          const x = climb(L, Math.floor(Math.random() * L.size));
+          ff += L.fit[x] / L.max; if (x === L.global) hit++;
+        }
+      }
+      out.push({ K, peaks: pk / reps, fit: ff / (reps * starts) * 100, hit: hit / (reps * starts) * 100 });
+    }
+    S.sweep = { N, pattern, reps, starts, rows: out };
+    $('sweepStatus').textContent = `N = ${N}, ${pattern === 'adjacent' ? 'neighbor' : 'random'} interactions. ` +
+      `${reps} landscapes per K, ${starts} searchers per landscape.`;
+    sweepRunning = false; $('sweepBtn').disabled = false;
+    renderSweep();
+  }
+  function renderSweep(){
+    const sw = S.sweep && S.sweep.N === S.N && S.sweep.pattern === S.pattern ? S.sweep : null;
+    const rows = sw ? sw.rows : [];
+    const msg = `Press "Run K sweep" (N = ${S.N})`;
+    lineChart($('sweepPeaks'), rows.map(r => ({ x:r.K, y:r.peaks, r })), {
+      h: 200, xLabel: 'K', yMin: 0, xMax: S.N - 1, highlightX: S.K, empty: msg,
+      yFmt: v => fmt(Math.round(v)),
+      tip: p => `<b>K = ${p.x}</b><br>Average local peaks: ${p.y.toFixed(1)}`
+    });
+    lineChart($('sweepFit'), rows.map(r => ({ x:r.K, y:r.fit, r })), {
+      h: 200, xLabel: 'K', yMax: 100, xMax: S.N - 1, highlightX: S.K, empty: msg,
+      yFmt: v => v + '%',
+      tip: p => `<b>K = ${p.x}</b><br>Searchers end at ${p.y.toFixed(1)}% of the global peak<br>` +
+                `${p.r.hit.toFixed(0)}% of searchers find the global peak`
+    });
+    $('sweepTable').innerHTML = rows.length ?
+      '<table class="data"><tr><th>K</th><th>Avg. local peaks</th><th>Final fitness (% of global)</th><th>% reaching global peak</th></tr>' +
+      rows.map(r => `<tr><td>${r.K}</td><td>${r.peaks.toFixed(1)}</td><td>${r.fit.toFixed(1)}%</td><td>${r.hit.toFixed(0)}%</td></tr>`).join('') +
+      '</table>' : '<p class="hint">No sweep yet.</p>';
+  }
+
+  // ---------- Wiring ----------
+  function rebuild(keepAgents){
+    S.L = buildLandscape(S.N, S.K, S.pattern, S.seed);
+    S.hover = -1; hideTip();
+    layoutMap();
+    if (keepAgents && S.agents.length){
+      S.agents.forEach(a => { a.path = [a.x]; });
+      resetHistory();
+    } else scatter();
+    setStatus(false);
+    renderAll();
+  }
+  function renderAll(){ renderMap(); updateStats(); renderMatrix(); renderHistory(); renderSweep(); }
+  function renderFrame(){ renderMap(); updateStats(); renderHistory(); }
+
+  function syncLabels(){
+    $('nVal').textContent = S.N;
+    $('nHint').textContent = fmt(Math.pow(2, S.N)) + ' possible configurations';
+    $('kVal').textContent = S.K;
+    $('kHint').textContent = S.K === 0 ? 'Each decision stands alone' :
+      `Each decision's payoff depends on ${S.K} other${S.K > 1 ? 's' : ''}`;
+    $('agentVal').textContent = S.nAgents;
+    $('jumpVal').textContent = Math.round(S.jump * 100) + '%';
+    $('speedVal').textContent = S.speed + ' steps/sec';
+    $('heightVal').textContent = Math.round(S.hScale * 100) + '%';
+    $('zoomVal').textContent = Math.round(S.zoom * 100) + '%';
+  }
+
+  function setPlaying(p){
+    S.playing = p;
+    $('play').textContent = p ? '❚❚ Pause' : '▶ Play';
+    if (p) setStatus(false);
+  }
+
+  $('nSlider').addEventListener('input', e => {
+    S.N = +e.target.value;
+    const ks = $('kSlider'); ks.max = S.N - 1;
+    if (S.K > S.N - 1){ S.K = S.N - 1; ks.value = S.K; }
+    syncLabels(); rebuild(false);
+  });
+  $('kSlider').addEventListener('input', e => { S.K = +e.target.value; syncLabels(); rebuild(true); });
+  $('pattern').addEventListener('change', e => { S.pattern = e.target.value; rebuild(true); });
+  $('seed').addEventListener('change', e => { S.seed = Math.max(1, Math.floor(+e.target.value || 1)); e.target.value = S.seed; rebuild(true); });
+  $('newLand').addEventListener('click', () => { S.seed = 1 + Math.floor(Math.random() * 99999); $('seed').value = S.seed; rebuild(true); });
+  $('agentSlider').addEventListener('input', e => { S.nAgents = +e.target.value; syncLabels(); });
+  $('agentSlider').addEventListener('change', () => { scatter(); setStatus(false); renderFrame(); });
+  $('rule').addEventListener('change', e => { S.rule = e.target.value; });
+  $('jumpSlider').addEventListener('input', e => { S.jump = +e.target.value / 100; syncLabels(); });
+  $('speedSlider').addEventListener('input', e => { S.speed = +e.target.value; syncLabels(); });
+  $('play').addEventListener('click', () => {
+    if (!S.agents.length) scatter();
+    if (!S.playing && allSettled()){ setStatus(true); renderFrame(); return; }
+    setPlaying(!S.playing);
+  });
+  $('stepBtn').addEventListener('click', () => { if (!S.agents.length) scatter(); simStep(); renderFrame(); });
+  $('scatter').addEventListener('click', () => { scatter(); setStatus(false); renderFrame(); });
+  $('clearAgents').addEventListener('click', () => { setPlaying(false); S.agents = []; S.history = []; setStatus(false); renderFrame(); });
+  $('showPeaks').addEventListener('change', e => { S.showPeaks = e.target.checked; renderMap(); });
+  $('showPaths').addEventListener('change', e => { S.showPaths = e.target.checked; renderMap(); });
+  $('sweepBtn').addEventListener('click', runSweep);
+
+  function cellFromEvent(e){
+    const rect = canvas.getBoundingClientRect();
+    if (S.view === '3d') return pick3D(e.clientX - rect.left, e.clientY - rect.top);
+    const c = Math.floor((e.clientX - rect.left) / G.cell), r = Math.floor((e.clientY - rect.top) / G.cell);
+    if (c < 0 || r < 0 || c >= G.cols || r >= G.rows) return -1;
+    return cfgAt(r, c);
+  }
+  function hoverAt(e){
+    const x = cellFromEvent(e);
+    if (x < 0){ if (S.hover !== -1){ S.hover = -1; requestMap(); } hideTip(); return; }
+    if (x !== S.hover){ S.hover = x; requestMap(); }
+    const L = S.L, here = S.agents.filter(a => a.x === x).length;
+    const tag = x === L.global ? `<b style="color:${C.global}">Global peak</b>` :
+                L.peak[x] ? '<b>Local peak</b>: every one-step change makes it worse' :
+                'Not a peak: at least one one-step change improves it';
+    const nb = S.view === '3d' ? `Orange rings mark its ${L.N} one-step neighbors.` : `Outlined: its ${L.N} one-step neighbors.`;
+    showTip(e, `<span class="mono">${bits(x)}</span><br>` +
+      `Fitness: <b>${pct(x).toFixed(1)}%</b> of global peak<br>${tag}` +
+      (here ? `<br>${here} searcher${here > 1 ? 's' : ''} here` : '') +
+      `<br><span style="color:${C.muted}">${nb} Click to drop a searcher.</span>`);
+  }
+  function dropAt(e){
+    const x = cellFromEvent(e); if (x < 0 || S.agents.length >= 300) return;
+    S.agents.push(makeAgent(x));
+    if (S.agents.length === 1) resetHistory();
+    setStatus(false); renderFrame();
+  }
+  let drag = null;
+  canvas.addEventListener('pointerdown', e => {
+    drag = { x:e.clientX, y:e.clientY, az:S.az, el:S.el, moved:false };
+    if (S.view === '3d'){ try { canvas.setPointerCapture(e.pointerId); } catch(_){} }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (drag && S.view === '3d'){
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      if (drag.moved){
+        S.az = drag.az - dx * 0.008;
+        S.el = Math.max(0.1, Math.min(1.52, drag.el + dy * 0.006));
+        S.hover = -1; hideTip(); requestMap(); return;
+      }
+    }
+    if (e.pointerType === 'mouse') hoverAt(e);
+  });
+  canvas.addEventListener('pointerup', e => { const d = drag; drag = null; if (d && !d.moved) dropAt(e); });
+  canvas.addEventListener('pointercancel', () => { drag = null; });
+  canvas.addEventListener('pointerleave', () => { if (drag) return; S.hover = -1; hideTip(); requestMap(); });
+
+  // 3D / 2D controls
+  function setView(v){
+    S.view = v; S.hover = -1; hideTip();
+    $('view3d').classList.toggle('on', v === '3d'); $('view2d').classList.toggle('on', v === '2d');
+    $('view3d').setAttribute('aria-pressed', v === '3d'); $('view2d').setAttribute('aria-pressed', v === '2d');
+    $('ctl3d').style.display = v === '3d' ? '' : 'none';
+    $('mapHelp').innerHTML = v === '3d'
+      ? 'Two floor axes split up the decisions, and the vertical axis is fitness. Each complete set of decisions is one point on this landscape: higher and darker means better. <b>Drag to rotate.</b> Hover to see a configuration\'s N one-step neighbors. Click to drop a searcher there.'
+      : 'Each square is one complete set of decisions. Darker means higher performance. Hover over a square to outline its <b>N</b> one-step neighbors. Click a square to drop a searcher there.';
+    if (S.L){ layoutMap(); renderMap(); }
+  }
+  $('view3d').addEventListener('click', () => setView('3d'));
+  $('view2d').addEventListener('click', () => setView('2d'));
+  $('style3d').addEventListener('change', e => { S.style = e.target.value; requestMap(); });
+  $('heightSlider').addEventListener('input', e => { S.hScale = +e.target.value / 100; syncLabels(); requestMap(); });
+  $('zoomSlider').addEventListener('input', e => { S.zoom = +e.target.value / 100; syncLabels(); requestMap(); });
+  $('autoRot').addEventListener('change', e => { S.autoRotate = e.target.checked; });
+  $('resetView').addEventListener('click', () => {
+    S.az = DEFAULT_VIEW.az; S.el = DEFAULT_VIEW.el; S.zoom = DEFAULT_VIEW.zoom; S.hScale = 1;
+    $('zoomSlider').value = 100; $('heightSlider').value = 100; syncLabels(); requestMap();
+  });
+
+  let resizeT;
+  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { layoutMap(); renderAll(); }, 120); });
+
+  // Animation loop
+  let last = performance.now(), acc = 0;
+  function loop(t){
+    const dt = Math.min(250, t - last); last = t;
+    if (S.view === '3d' && S.autoRotate && !drag){ S.az += dt * 0.00035; mapDirty = true; }
+    if (S.playing){
+      acc += dt; const interval = 1000 / S.speed; let n = 0;
+      while (acc >= interval && n < 5 && S.playing){ simStep(); acc -= interval; n++; }
+      if (n) renderFrame();
+    } else acc = 0;
+    if (mapDirty) renderMap();
+    requestAnimationFrame(loop);
+  }
+
+  syncLabels();
+  setView('3d');
+  rebuild(false);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
